@@ -500,7 +500,8 @@ const WA_MSG = {
   menu: s => `¡Hola${firstOf(s) ? ' ' + firstOf(s) : ''}! Gracias por pasar por el stand de Selva en el Perú Business Fest. Te dejo todo aquí para que lo revises con calma.\n\n¿Qué te interesa más? Responde con el número:\n\n*1.* Que tu negocio aparezca en Google y en ChatGPT\n*2.* Una web, app o automatización para tu negocio\n*3.* Solo conocer qué hace Selva\n\nSolo te escribiremos sobre esto. Si no quieres más mensajes, responde *BAJA*.`,
   seo: s => `Perfecto. Aquí tienes tu *diagnóstico gratuito de visibilidad*: en 3 minutos ves cómo te encuentran Google, ChatGPT y Gemini frente a tu competencia.\n\n${waLink(s, 'seo')}\n\nHazlo cuando tengas un momento: el resultado te llega a este WhatsApp y a tu correo.`,
   dev: s => `Perfecto. Aquí tienes tu *diagnóstico gratuito de procesos*: nos cuentas en 3 minutos qué te quita tiempo y te devolvemos qué se puede resolver con una web, app o automatización, con casos parecidos.\n\n${waLink(s, 'dev')}\n\nEl resultado te llega a este WhatsApp y a tu correo.`,
-  info: s => `Selva es una agencia de marketing digital y desarrollo: hacemos que las empresas aparezcan en Google y en las IA (SEO/GEO) y construimos webs, apps y automatizaciones a medida, con equipo propio.\n\nQuiénes somos: ${BASE}/nosotros/\nProyectos y clientes: ${BASE}/portafolio/\n\nSi quieres un diagnóstico gratuito de tu negocio, responde *1* (Google e IA) o *2* (web, app o automatización).`,
+  info: s => `Selva es una agencia de marketing digital y desarrollo: hacemos que las empresas aparezcan en Google y en las IA (SEO/GEO) y construimos webs, apps y automatizaciones a medida, con equipo propio.\n\nQuiénes somos: ${BASE}/nosotros/\nProyectos y clientes: ${BASE}/portafolio/\n\n${isClosed() ? `Si quieres revisar tu caso, agenda 30 minutos sin costo con Enrique Barraza: ${CAL}` : 'Si quieres un diagnóstico gratuito de tu negocio, responde *1* (Google e IA) o *2* (web, app o automatización).'}`,
+  closed: s => `¡Hola${firstOf(s) ? ' ' + firstOf(s) : ''}! Gracias por escribirnos. Las auditorías gratuitas del Perú Business Fest estuvieron disponibles hasta el 17 de octubre, pero igual queremos ayudarte.\n\nAgenda 30 minutos sin costo con Enrique Barraza y revisamos juntos tu caso:\n${CAL}\n\nSi prefieres, cuéntanos por aquí qué necesitas.`,
   baja: () => `Listo, no te volveremos a escribir. Si más adelante necesitas algo, aquí estamos.`,
   remindLink: s => `Hola${firstOf(s) ? ' ' + firstOf(s) : ''}, te dejo el enlace a la mano por si hoy tienes 3 minutos:\n\n${waLink(s, s.choice === 'dev' ? 'dev' : 'seo')}\n\nSi prefieres verlo con alguien del equipo, respóndenos por aquí.`,
   remindMenu: s => `Hola${firstOf(s) ? ' ' + firstOf(s) : ''}, ¿te mando tu diagnóstico gratuito? Responde *1* (que te encuentren en Google e IA) o *2* (web, app o automatización).`
@@ -524,6 +525,7 @@ function waHook(b) {
     Object.assign(s, { dest: b.dest || s.dest || key, phone: String(b.phone || s.phone || '').replace(/\D/g, ''), lid: b.lid || s.lid || '', name: cleanName(b.name) || s.name || '', conv: b.conv || s.conv, contact: b.contact || s.contact, tMenu: Date.now() });
     s.stage = s.done ? 'done' : 'menu'; delete s.reminded;
     save({ type: 'wa', t: now(), ev: nuevo ? 'scan' : 'rescan', key }); wastSave();
+    if (isClosed()) return { handled: true, replies: [WA_MSG.closed(s)], crm: { origen: 'pbf2026-wa', nuevo, nombre: s.name } };
     return { handled: true, replies: [WA_MSG.menu(s)], crm: { origen: 'pbf2026-wa', nuevo, nombre: s.name } };
   }
   if (!s || Date.now() - s.t > 21 * 864e5) return { handled: false };
@@ -533,6 +535,7 @@ function waHook(b) {
   }
   if (!['menu', 'link', 'info'].includes(s.stage)) return { handled: false };
   const c = waChoice(text, s.stage === 'menu'); if (!c) return { handled: false };
+  if (isClosed() && c !== 'info') { s.choice = c; wastSave(); save({ type: 'wa', t: now(), ev: 'choice_closed', key, c }); return { handled: true, replies: [WA_MSG.closed(s)], crm: { fields: { pbf_interes: c } } }; }
   if (c === 'info') { if (s.stage === 'menu') s.stage = 'info'; }
   else { s.choice = c; s.stage = s.done ? 'done' : 'link'; s.tLink = Date.now(); }
   s.choices = (s.choices || []).concat(c).slice(-5);
@@ -563,6 +566,7 @@ function waDone(lead, flow, R, link) {
 setInterval(async () => {
   const t = Date.now();
   for (const s of wast.values()) {
+    if (isClosed()) break;
     if (s.reminded || s.done || !['menu', 'link'].includes(s.stage) || !s.dest) continue;
     const base = s.stage === 'link' ? s.tLink : (s.tMenu || s.t);
     const at = limaMin(base) < 17 * 60 + 30 ? limaAt(base, 0, 18, 30) : limaAt(base, 1, 10, 0);
@@ -602,12 +606,25 @@ ${s.phone ? `<a href="https://wa.me/${s.phone}?text=${encodeURIComponent(sugerid
 }
 setInterval(() => { const m = limaMin(Date.now()); if (m >= 9 * 60 && m < 9 * 60 + 10) digest(false).catch(e => log('digest', e.message)); }, 5 * 60e3);
 
+// ---------- cierre de las auditorías (17-oct-2026, fin de la feria) ----------
+const CLOSE_AT = Date.parse(process.env.PBF_CLOSE_AT || '2026-10-18T00:30:00Z'); // 17-oct 19:30 Lima (cierre pedido por Enrique)
+const isClosed = () => Date.now() >= CLOSE_AT;
+const CLOSED_MSG = `Las auditorías gratuitas estuvieron disponibles hasta el 17 de octubre. Igual queremos ayudarte: agenda 30 minutos sin costo con Enrique Barraza aquí: ${CAL}`;
+const FLOWTXT = { seo: 'cómo te encuentran tus clientes en Google y en la IA, y qué harías primero para aparecer.', dev: 'qué se puede automatizar en tu negocio y por dónde conviene empezar.' };
 // ---------- servidor ----------
 const pages = { '/pbf-seo': 'seo.html', '/pbf-dev': 'dev.html' };
 const NOWEB = /^(no|ninguna|ninguno|nop|na|n\/a|-+|\.+|sin web|no tengo|no tengo web|aun no|aún no)$/i;
 http.createServer(async (req, res) => {
   const u = new URL(req.url, 'http://x'); const p = u.pathname.replace(/\/+$/, '') || '/';
   try {
+    if (req.method === 'GET' && pages[p] && isClosed() && !u.searchParams.get('r')) {
+      const h = fs.readFileSync(path.join(PUB, 'closed.html'), 'utf8').replace(/__CAL__/g, CAL).replace(/__FLOWTXT__/g, FLOWTXT[p === '/pbf-dev' ? 'dev' : 'seo']);
+      return send(res, 200, h, 'text/html');
+    }
+    if (req.method === 'POST' && isClosed() && (p === '/pbf-api/lead' || p === '/pbf-api/verify' || p === '/pbf-api/resend' || p === '/pbf-api/seo/start' || p === '/pbf-api/dev/start')) {
+      save({ type: 'closed_try', t: now(), p, ip: ipOf(req) });
+      return send(res, 410, { error: CLOSED_MSG, closed: true, cal: CAL });
+    }
     if (req.method === 'GET' && pages[p]) {
       let h = fs.readFileSync(path.join(PUB, pages[p]), 'utf8').replace(/__CAL__/g, CAL).replace(/__WA__/g, WA);
       return send(res, 200, h, 'text/html');
