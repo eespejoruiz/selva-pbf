@@ -617,6 +617,10 @@ const NOWEB = /^(no|ninguna|ninguno|nop|na|n\/a|-+|\.+|sin web|no tengo|no tengo
 http.createServer(async (req, res) => {
   const u = new URL(req.url, 'http://x'); const p = u.pathname.replace(/\/+$/, '') || '/';
   try {
+    if (req.method === 'GET' && pages[p] && /^[\w-]{12,24}$/.test(u.searchParams.get('a') || '')) {
+      const f = path.join(DATA, 'amp', u.searchParams.get('a') + '.html');
+      if (fs.existsSync(f)) return send(res, 200, fs.readFileSync(f, 'utf8'), 'text/html');
+    }
     if (req.method === 'GET' && pages[p] && isClosed() && !u.searchParams.get('r')) {
       const h = fs.readFileSync(path.join(PUB, 'closed.html'), 'utf8').replace(/__CAL__/g, CAL).replace(/__FLOWTXT__/g, FLOWTXT[p === '/pbf-dev' ? 'dev' : 'seo']);
       return send(res, 200, h, 'text/html');
